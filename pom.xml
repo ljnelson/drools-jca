@@ -20,6 +20,11 @@
     </license>
   </licenses>
 
+  <issueManagement>
+    <system>Google Code</system>
+    <url>http://code.google.com/p/drools-jca/issues/list</url>
+  </issueManagement>
+
   <organization>
     <name>Laird Nelson</name>
     <url>http://www.linkedin.com/in/ljnelson</url>
