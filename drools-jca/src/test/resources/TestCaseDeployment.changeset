@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- <change-set xmlns="http://drools.org/drools-5.0/change-set" xmlns:xs="http://www.w3.org/2001/XMLSchema-instance" xs:schemaLocation="http://drools.org/drools-5.0/change-set http://anonsvn.jboss.org/repos/labs/labs/jbossrules/tags/5.0.1.26597.FINAL/drools-api/src/main/resources/change-set.xsd"> -->
+<change-set xmlns="http://drools.org/drools-5.0/change-set" xmlns:xs="http://www.w3.org/2001/XMLSchema-instance" xs:schemaLocation="http://drools.org/drools-5.0/change-set change-set.xsd">
+  <add>
+    <resource source="classpath:TestCaseDeployment.drl" type="DRL">
+    </resource>
+  </add>
+</change-set>

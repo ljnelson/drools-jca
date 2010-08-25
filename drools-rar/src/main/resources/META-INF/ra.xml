@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<connector xmlns="http://java.sun.com/xml/ns/j2ee" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://java.sun.com/xml/ns/j2ee http://java.sun.com/xml/ns/j2ee/connector_1_5.xsd" version="1.5">
+  <description>A ResourceAdapter for the Drools rules engine.</description>
+  <display-name>Drools 5.1.0 ResourceAdapter</display-name>
+  <vendor-name>Laird Nelson</vendor-name>
+  <eis-type>Rules Engine</eis-type>
+  <resourceadapter-version>1.0</resourceadapter-version>
+  <license>
+    <license-required>false</license-required>
+  </license>
+  <resourceadapter>
+
+    <resourceadapter-class>com.google.code.drools.jca.DroolsResourceAdapter</resourceadapter-class>
+
+    <config-property>
+      <config-property-name>scanningInterval</config-property-name>
+      <config-property-type>java.lang.Integer</config-property-type>
+      <config-property-value>20</config-property-value>
+    </config-property>
+
+    <config-property>
+      <config-property-name>scanResources</config-property-name>
+      <config-property-type>java.lang.Boolean</config-property-type>
+      <config-property-value>true</config-property-value>
+    </config-property>
+
+    <config-property>
+      <config-property-name>scanDirectories</config-property-name>
+      <config-property-type>java.lang.Boolean</config-property-type>
+      <config-property-value>true</config-property-value>
+    </config-property>
+
+    <config-property>
+      <config-property-name>monitorChangeSetEvents</config-property-name>
+      <config-property-type>java.lang.Boolean</config-property-type>
+      <config-property-value>true</config-property-value>
+    </config-property>
+
+    <config-property>
+      <config-property-name>changeSetResourceName</config-property-name>
+      <config-property-type>java.lang.String</config-property-type>
+      <config-property-value>rules/KnowledgeBases.xml</config-property-value>
+    </config-property>
+
+    <outbound-resourceadapter>
+
+      <connection-definition>
+
+        <managedconnectionfactory-class>com.google.code.drools.jca.DroolsManagedConnectionFactory</managedconnectionfactory-class>
+
+        <connectionfactory-interface>org.drools.KnowledgeBase</connectionfactory-interface> 
+        <connectionfactory-impl-class>com.google.code.drools.jca.KnowledgeBaseUserConnectionFactory</connectionfactory-impl-class>
+
+        <connection-interface>org.drools.runtime.StatelessKnowledgeSession</connection-interface>
+        <connection-impl-class>com.google.code.drools.jca.StatelessKnowledgeSessionUserConnection</connection-impl-class>
+
+      </connection-definition>
+
+      <transaction-support>NoTransaction</transaction-support>
+
+      <!-- We actually don't have any way of supporting authentication. -->
+      <authentication-mechanism>
+        <authentication-mechanism-type>BasicPassword</authentication-mechanism-type>
+        <credential-interface>javax.resource.spi.security.PasswordCredential</credential-interface>
+      </authentication-mechanism>
+      <!-- Since we don't authenticate at all, we could easily re-authenticate! -->
+      <reauthentication-support>true</reauthentication-support>
+
+    </outbound-resourceadapter>
+
+  </resourceadapter>
+</connector>
