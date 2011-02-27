@@ -2,7 +2,7 @@
  *
  * $Id$
  *
- * Copyright (c) 2010 Laird Nelson.
+ * Copyright (c) 2010, 2011 Laird Nelson.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -36,6 +36,7 @@ import org.drools.KnowledgeBase;
 import org.drools.time.SessionClock;
 
 import org.drools.runtime.KnowledgeRuntime;
+import org.drools.runtime.KnowledgeSessionConfiguration;
 import org.drools.runtime.Calendars;
 import org.drools.runtime.Channel;
 import org.drools.runtime.Globals;
@@ -245,6 +246,16 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
     return null;
   }
 
+  @Override
+  public KnowledgeSessionConfiguration getSessionConfiguration() {
+    final boolean associated = this.associateConnection();
+    final KnowledgeRuntime delegate = this.getDelegate();
+    if (delegate != null) {
+      return delegate.getSessionConfiguration();
+    }
+    return null;
+  }
+
 
   /*
    * WorkingMemory implementation.
@@ -262,21 +273,11 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   }
 
   @Override
-  public QueryResults getQueryResults(final String query) {
+  public QueryResults getQueryResults(final String query, final Object... arguments) {
     final boolean associated = this.associateConnection();
     final KnowledgeRuntime delegate = this.getDelegate();
     if (delegate != null) {
-      return delegate.getQueryResults(query);
-    }
-    return null;
-  }
-
-  @Override
-  public QueryResults getQueryResults(final String query, final Object[] stuff) {
-    final boolean associated = this.associateConnection();
-    final KnowledgeRuntime delegate = this.getDelegate();
-    if (delegate != null) {
-      return delegate.getQueryResults(query, stuff);
+      return delegate.getQueryResults(query, arguments);
     }
     return null;
   }

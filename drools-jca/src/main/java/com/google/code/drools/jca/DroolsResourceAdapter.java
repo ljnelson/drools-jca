@@ -2,7 +2,7 @@
  *
  * $Id$
  *
- * Copyright (c) 2010 Laird Nelson.
+ * Copyright (c) 2010, 2011 Laird Nelson.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -30,17 +30,29 @@ package com.google.code.drools.jca;
 import java.beans.PropertyChangeListener;
 import java.beans.PropertyChangeSupport;
 
+import java.io.File;
+import java.io.IOException;
+import java.io.Reader;
 import java.io.Serializable;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
+import java.net.URL;
+
+import java.security.AccessController;
+import java.security.PrivilegedAction;
+
+import java.util.Arrays;
 import java.util.Timer;
 
 import java.util.concurrent.Future;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Callable;
+
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import javax.resource.spi.ActivationSpec;
 import javax.resource.spi.BootstrapContext;
@@ -67,6 +79,7 @@ import org.drools.agent.KnowledgeAgent;
 import org.drools.agent.KnowledgeAgentConfiguration;
 import org.drools.agent.KnowledgeAgentFactory;
 
+import org.drools.io.Resource;
 import org.drools.io.ResourceFactory;
 import org.drools.io.ResourceFactoryService;
 import org.drools.io.ResourceChangeNotifier;
@@ -76,6 +89,8 @@ import org.drools.io.ResourceChangeScannerConfiguration;
 public class DroolsResourceAdapter implements ResourceAdapter, Serializable {
 
   private static final PropertyChangeListener[] EMPTY_PROPERTY_CHANGE_LISTENER_ARRAY = new PropertyChangeListener[0];
+
+  private static final Pattern environmentVariableSubstitutionPattern = Pattern.compile("\\$\\{(.+)\\}");
 
   private PropertyChangeSupport propertyChangeSupport;
   
@@ -95,6 +110,8 @@ public class DroolsResourceAdapter implements ResourceAdapter, Serializable {
 
   private int scanningInterval;
 
+  private boolean agentReusesKnowledgeBaseInstance;
+
   private final KnowledgeAgentFuture kaFuture;
 
   /**
@@ -109,6 +126,7 @@ public class DroolsResourceAdapter implements ResourceAdapter, Serializable {
     this.setScanDirectories(true);
     this.setScanningInterval(60);
     this.setMonitorChangeSetEvents(true);
+    this.setAgentReusesKnowledgeBaseInstance(true);
   }
 
   @Override
@@ -175,6 +193,16 @@ public class DroolsResourceAdapter implements ResourceAdapter, Serializable {
     this.monitorChangeSetEvents = monitorChangeSetEvents;
     this.firePropertyChange("monitorChangeSetEvents", old, this.getMonitorChangeSetEvents());
   }
+
+  public boolean getAgentReusesKnowledgeBaseInstance() {
+    return this.agentReusesKnowledgeBaseInstance;
+  }
+
+  public void setAgentReusesKnowledgeBaseInstance(final boolean value) {
+    final boolean old = this.getAgentReusesKnowledgeBaseInstance();
+    this.agentReusesKnowledgeBaseInstance = value;
+    this.firePropertyChange("agentReusesKnowledgeBaseInstance", old, this.getAgentReusesKnowledgeBaseInstance());
+  }
   
   @Override
   public void start(final BootstrapContext context) throws ResourceAdapterInternalException {
@@ -215,7 +243,7 @@ public class DroolsResourceAdapter implements ResourceAdapter, Serializable {
       // Set up the ResourceChangeScanner that will repeatedly check the URL we
       // eventually configure our KnowledgeAgent with.
       this.scanner = ResourceFactory.getResourceChangeScannerService();
-      assert this.scanner != null;
+      assert this.scanner instanceof JCACompliantResourceChangeScanner;
       final ResourceChangeScannerConfiguration scannerConfiguration = this.scanner.newResourceChangeScannerConfiguration();
       assert scannerConfiguration != null;
       scannerConfiguration.setProperty("drools.resource.scanner.interval", String.valueOf(Math.max(0, this.getScanningInterval())));
@@ -224,7 +252,7 @@ public class DroolsResourceAdapter implements ResourceAdapter, Serializable {
       // The scanner is useless without a notifier.  The odd part is that the two
       // are only linked by the KnowledgeAgent.
       this.notifier = ResourceFactory.getResourceChangeNotifierService();
-      assert this.notifier != null;
+      assert this.notifier instanceof JCACompliantResourceChangeNotifier;
 
       // Start both the scanner and the notifier.  Currently--bizarrely--they
       // don't know about each other.  They will be married by the internals of
@@ -237,7 +265,7 @@ public class DroolsResourceAdapter implements ResourceAdapter, Serializable {
       // on a separate thread because it can take a while.
       assert this.kaFuture != null;
       try {
-        workManager.startWork(this.kaFuture);
+        workManager.scheduleWork(this.kaFuture);
       } catch (final WorkException workException) {
         throw new ResourceAdapterInternalException(workException);
       }
@@ -302,13 +330,19 @@ public class DroolsResourceAdapter implements ResourceAdapter, Serializable {
   }
 
   protected KnowledgeAgent createKnowledgeAgent() {
-    final String changeSetResourceName = this.getChangeSetResourceName();
+    String changeSetResourceName = this.getChangeSetResourceName();
     if (changeSetResourceName == null) {
       throw new IllegalStateException("this.getChangeSetResourceName() == null");
     }
 
     try {
-      System.setProperty(KnowledgeAgentFactory.PROVIDER_CLASS_NAME_PROPERTY_NAME, JCACompliantKnowledgeAgentProvider.class.getName());
+      AccessController.doPrivileged(new PrivilegedAction<Void>() {
+          @Override
+          public final Void run() {
+            System.setProperty(KnowledgeAgentFactory.PROVIDER_CLASS_NAME_PROPERTY_NAME, JCACompliantKnowledgeAgentProvider.class.getName());
+            return null;
+          }
+        });
     } catch (final SecurityException ohWell) {
       // ignore; we tried our best
     }
@@ -325,16 +359,119 @@ public class DroolsResourceAdapter implements ResourceAdapter, Serializable {
     final KnowledgeAgentConfiguration kac = this.createKnowledgeAgentConfiguration();
     final KnowledgeAgent ka = KnowledgeAgentFactory.newKnowledgeAgent(this.getClass().getName(), kb, kac);
 
-    assert (JCACompliantKnowledgeAgentProvider.class.getName().equals(System.getProperty(KnowledgeAgentFactory.PROVIDER_CLASS_NAME_PROPERTY_NAME)) ? ka instanceof JCACompliantKnowledgeAgent : true) : "WTF; ka is not a JCACompliantKnowledgeAgent: " + ka.getClass().getName();
+    assert assertCorrectKnowledgeAgentImplementation(ka) : "WTF; ka is not a JCACompliantKnowledgeAgent: " + ka.getClass().getName();
 
-    ka.applyChangeSet(ResourceFactory.newClassPathResource(changeSetResourceName));
+    changeSetResourceName = replaceVariables(changeSetResourceName);
+    if (changeSetResourceName == null) {
+      throw new IllegalStateException("this.getChangeSetResourceName() == null after variable substitution");
+    }
+
+    String[] names = changeSetResourceName.split("\\s*[,|]+\\s*");
+    if (names == null) {
+      names = new String[] { changeSetResourceName };
+    }
+
+    Resource resource = null;
+    for (String name : names) {
+      if (name == null) {
+        continue;
+      }
+
+      name = name.trim();
+      if (name.length() <= 0) {
+        continue;
+      }
+
+      // Maybe it's an explicit classpath resource.
+      if (name.startsWith("classpath:")) {
+        // That's easy; we're a classpath resource.
+        resource = ResourceFactory.newClassPathResource(name.substring("classpath:".length()));
+        assert resource != null;
+        if (exists(resource)) {
+          break;
+        } else {
+          resource = null;
+        }
+      }
+
+      // OK, maybe it's a URL resource.
+      try {
+        resource = ResourceFactory.newUrlResource(name);
+      } catch (final IllegalArgumentException oops) {
+        resource = null;
+      }
+      if (exists(resource)) {
+        break;
+      } else {
+        resource = null;
+      }
+
+      // OK, maybe it's a file.
+      resource = ResourceFactory.newFileResource(name);
+      if (exists(resource)) {
+        break;
+      } else {
+        resource = null;
+      }
+
+      // OK, maybe it's a regular old classpath resource.
+      resource = ResourceFactory.newClassPathResource(name);
+      if (exists(resource)) {
+        break;
+      } else {
+        resource = null;
+      }
+    }
+
+    if (resource == null) {
+      throw new IllegalStateException("Could not find an existent resource by any means that corresponds to " + Arrays.asList(names));
+    }
+
+    ka.applyChangeSet(resource);
     assert ka.getKnowledgeBase() != null;
     return ka;
+  }
+
+  private static final boolean exists(final Resource resource) {
+    boolean returnValue = false;
+    if (resource != null) {
+      Reader reader = null;
+      try {
+        reader = resource.getReader();
+        returnValue = reader != null;
+      } catch (final IOException boom) {
+        returnValue = false;
+      } finally {
+        if (reader != null) {
+          try {
+            reader.close();
+          } catch (final IOException ignore) {
+            // ignore
+          }
+        }
+      }
+    }
+    return returnValue;
+  }
+
+  private static final boolean assertCorrectKnowledgeAgentImplementation(final KnowledgeAgent ka) {
+    final String providerClassName = AccessController.doPrivileged(new PrivilegedAction<String>() {
+        @Override
+        public final String run() {
+          return System.getProperty(KnowledgeAgentFactory.PROVIDER_CLASS_NAME_PROPERTY_NAME);
+        }
+      });
+    if (JCACompliantKnowledgeAgentProvider.class.getName().equals(providerClassName)) {
+      return ka instanceof JCACompliantKnowledgeAgent;
+    } else {
+      return true;
+    }
   }
 
   protected KnowledgeAgentConfiguration createKnowledgeAgentConfiguration() {
     final KnowledgeAgentConfiguration c = KnowledgeAgentFactory.newKnowledgeAgentConfiguration();
     assert c != null;
+    c.setProperty("drools.agent.newInstance", String.valueOf(!this.getAgentReusesKnowledgeBaseInstance()));
     c.setProperty("drools.agent.scanResources", String.valueOf(this.getScanResources()));
     c.setProperty("drools.agent.scanDirectories", String.valueOf(this.getScanDirectories()));
     c.setProperty("drools.agent.monitorChangeSetEvents", String.valueOf(this.getMonitorChangeSetEvents()));
@@ -421,6 +558,46 @@ public class DroolsResourceAdapter implements ResourceAdapter, Serializable {
     if (this.propertyChangeSupport != null) {
       this.propertyChangeSupport.firePropertyChange(name, old, newValue);
     }
+  }
+
+  static final String replaceVariables(final String rep) {
+    String returnValue = null;
+    if (rep != null) {
+      final Matcher matcher = environmentVariableSubstitutionPattern.matcher(rep);
+      final StringBuffer sb = new StringBuffer();
+      while (matcher.find()) {
+        final String varName = matcher.group(1);
+        assert varName != null;
+        if (varName.startsWith("env.") && varName.length() > "env.".length()) {
+          final String varValue = AccessController.doPrivileged(new PrivilegedAction<String>() {
+              @Override
+              public final String run() {
+                return System.getenv(varName.substring("env.".length()));
+              }
+            });
+          if (varValue != null) {
+            matcher.appendReplacement(sb, varValue);
+          } else {
+            matcher.appendReplacement(sb, "\\${" + varName + "}");
+          }
+        } else {
+          final String varValue = AccessController.doPrivileged(new PrivilegedAction<String>() {
+              @Override
+              public final String run() {
+                return System.getProperty(varName, "\\${" + varName + "}");
+              }
+            });
+          if (varValue != null) {
+            matcher.appendReplacement(sb, varValue);
+          } else {
+            matcher.appendReplacement(sb, "\\${" + varName + "}");
+          }
+        }
+      }
+      matcher.appendTail(sb);
+      returnValue = sb.toString();
+    }
+    return returnValue;
   }
 
 

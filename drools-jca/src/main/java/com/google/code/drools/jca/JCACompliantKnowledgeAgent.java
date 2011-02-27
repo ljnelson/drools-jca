@@ -2,7 +2,7 @@
  *
  * $Id$
  *
- * Copyright (c) 2010 Laird Nelson.
+ * Copyright (c) 2010, 2011 Laird Nelson.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -27,6 +27,13 @@
  */
 package com.google.code.drools.jca;
 
+import java.io.IOException;
+
+import java.net.URL;
+
+import java.util.ArrayList;
+import java.util.Collection;
+
 import java.util.concurrent.LinkedBlockingQueue;
 
 import javax.resource.spi.work.WorkManager;
@@ -43,6 +50,11 @@ import org.drools.agent.KnowledgeAgentConfiguration;
 import org.drools.agent.impl.KnowledgeAgentImpl;
 
 import org.drools.builder.KnowledgeBuilderConfiguration;
+
+import org.drools.io.Resource;
+import org.drools.io.ResourceFactory;
+
+import org.drools.io.internal.InternalResource;
 
 public class JCACompliantKnowledgeAgent extends KnowledgeAgentImpl {
 
@@ -83,7 +95,7 @@ public class JCACompliantKnowledgeAgent extends KnowledgeAgentImpl {
       if (this.changeSetNotificationDetector == null) {
         this.changeSetNotificationDetector = new KnowledgeAgentImpl.ChangeSetNotificationDetector(this, this.queue, this.listener);
         try {
-          this.workManager.startWork(new Work() {
+          this.workManager.scheduleWork(new Work() {
               @Override
               public final void run() {
                 JCACompliantKnowledgeAgent.this.changeSetNotificationDetector.run();
@@ -115,6 +127,81 @@ public class JCACompliantKnowledgeAgent extends KnowledgeAgentImpl {
     } catch (final InterruptedException ie) {
       this.listener.exception(new RuntimeException("KnowledgeAgent error while adding ChangeSet notification to queue", ie));
     }
+  }
+
+  @Override
+  public ChangeSet getChangeSet(final Resource r) {    
+    ChangeSet changeSet = null;
+    final ChangeSet originalChangeSet = super.getChangeSet(r);
+    if (originalChangeSet != null) {
+      final Collection<Resource> added = originalChangeSet.getResourcesAdded();
+      final Collection<Resource> modified = originalChangeSet.getResourcesModified();
+      final Collection<Resource> removed = originalChangeSet.getResourcesRemoved();
+      
+      final Collection<Resource> newAdded = new ArrayList<Resource>();
+      final Collection<Resource> newModified = new ArrayList<Resource>();
+      final Collection<Resource> newRemoved = new ArrayList<Resource>();
+
+      final Collection<Collection<Resource>> wholeBanana = new ArrayList<Collection<Resource>>();
+      wholeBanana.add(added);
+      wholeBanana.add(modified);
+      wholeBanana.add(removed);
+
+      for (final Collection<Resource> resources : wholeBanana) {
+        if (resources != null && !resources.isEmpty()) {
+          for (Resource resource : resources) {
+            if (resource instanceof InternalResource) {
+              InternalResource internalResource = (InternalResource)resource;
+              if (internalResource.hasURL()) {
+                URL url = null;
+                try {
+                  url = internalResource.getURL();
+                } catch (final IOException boom) {
+                  url = null;
+                }
+                if (url != null) {
+                  final String rep = DroolsResourceAdapter.replaceVariables(url.toString());
+                  if (rep != null) {
+                    try {
+                      resource = ResourceFactory.newUrlResource(rep);
+                      if (resource instanceof InternalResource) {
+                        ((InternalResource)resource).setResourceType(internalResource.getResourceType());
+                      }
+                    } catch (final IllegalArgumentException badUrl) {
+                      // ignore; we tried our best; just use the old resource as-was.
+                    }
+                  }
+                }
+              }
+            }
+            if (resources == added) {
+              newAdded.add(resource);
+            } else if (resources == modified) {
+              newModified.add(resource);
+            } else if (resources == removed) {
+              newRemoved.add(resource);
+            }
+          }
+        }
+      }
+
+      added.clear();
+      added.addAll(newAdded);
+      assert added == originalChangeSet.getResourcesAdded();
+
+      modified.clear();
+      modified.addAll(newModified);
+      assert modified == originalChangeSet.getResourcesModified();
+
+      removed.clear();
+      removed.addAll(newRemoved);
+      assert removed == originalChangeSet.getResourcesRemoved();
+
+    }
+    if (changeSet == null) {
+      changeSet = originalChangeSet;
+    }
+    return changeSet;
   }
   
 }

@@ -2,7 +2,7 @@
  *
  * $Id$
  *
- * Copyright (c) 2010 Laird Nelson.
+ * Copyright (c) 2010, 2011 Laird Nelson.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -255,6 +255,15 @@ public class KnowledgeBaseUserConnectionFactory implements KnowledgeBase, Serial
     if (kb != null) {
       kb.removeProcess(processName);
     }
+  }
+
+  @Override
+  public Collection<Process> getProcesses() {
+    final KnowledgeBase kb = this.getKnowledgeBase();
+    if (kb == null) {
+      return null;
+    }
+    return kb.getProcesses();
   }
 
   @Override
