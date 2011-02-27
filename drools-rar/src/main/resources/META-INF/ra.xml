@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <connector xmlns="http://java.sun.com/xml/ns/j2ee" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://java.sun.com/xml/ns/j2ee http://java.sun.com/xml/ns/j2ee/connector_1_5.xsd" version="1.5">
   <description>A ResourceAdapter for the Drools rules engine.</description>
-  <display-name>Drools 5.1.0 ResourceAdapter</display-name>
+  <display-name>Drools 5.2.0 ResourceAdapter</display-name>
   <vendor-name>Laird Nelson</vendor-name>
   <eis-type>Rules Engine</eis-type>
   <resourceadapter-version>1.0</resourceadapter-version>
