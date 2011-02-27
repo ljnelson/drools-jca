@@ -47,12 +47,6 @@
 
       <dependency>
         <groupId>org.drools</groupId>
-        <artifactId>drools-api</artifactId>
-        <version>${droolsVersion}</version>
-      </dependency>
-
-      <dependency>
-        <groupId>org.drools</groupId>
         <artifactId>drools-core</artifactId>
         <version>${droolsVersion}</version>
       </dependency>
