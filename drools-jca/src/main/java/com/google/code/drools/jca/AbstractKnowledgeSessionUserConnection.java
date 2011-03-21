@@ -2,7 +2,7 @@
  *
  * $Id$
  *
- * Copyright (c) 2010 Laird Nelson.
+ * Copyright (c) 2010, 2011 Laird Nelson.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -53,7 +53,7 @@ import org.drools.event.rule.AgendaEventListener;
 import org.drools.event.rule.WorkingMemoryEventListener;
 import org.drools.event.rule.WorkingMemoryEventManager;
 
-public abstract class AbstractKnowledgeSessionUserConnection<T extends CommandExecutor & ProcessEventManager & WorkingMemoryEventManager> implements Closeable, WorkingMemoryEventManager, ProcessEventManager, CommandExecutor {
+public abstract class AbstractKnowledgeSessionUserConnection<T extends CommandExecutor & ProcessEventManager & WorkingMemoryEventManager> implements Closeable, WorkingMemoryEventManager, ProcessEventManager, CommandExecutor, UserConnection<DroolsManagedConnection> {
 
   private DroolsManagedConnection creator;
   
@@ -105,7 +105,8 @@ public abstract class AbstractKnowledgeSessionUserConnection<T extends CommandEx
     }
   }
 
-  final void setCreator(final DroolsManagedConnection creator) {
+  @Override
+  public final void setCreator(final DroolsManagedConnection creator) {
     synchronized (this.creatorLock) {
       this.creator = creator;
       if (creator != null) {

@@ -2,7 +2,7 @@
  *
  * $Id$
  *
- * Copyright (c) 2010 Laird Nelson.
+ * Copyright (c) 2010, 2011 Laird Nelson.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -70,17 +70,25 @@ public class DroolsManagedConnection implements ManagedConnection, Dissociatable
 
   private final ConnectionRequestInfo connectionRequestInfo;
 
-  private final Set<AbstractKnowledgeSessionUserConnection> handles;
+  private final Set<UserConnection> handles;
 
   public DroolsManagedConnection(final DroolsManagedConnectionFactory creator, final ConnectionRequestInfo connectionRequestInfo) {
     super();
     this.listeners = new LinkedHashSet<ConnectionEventListener>();
-    this.handles = new HashSet<AbstractKnowledgeSessionUserConnection>();
+    this.handles = new HashSet<UserConnection>();
     this.creator = creator;
     this.connectionRequestInfo = connectionRequestInfo;
     if (creator == null) {
       throw new IllegalArgumentException("creator", new NullPointerException("creator == null"));
     }
+  }
+
+  public KnowledgeAgent getKnowledgeAgent() throws InterruptedException, ExecutionException {
+    final DroolsManagedConnectionFactory creator = this.getCreator();
+    if (creator != null) {
+      return creator.getKnowledgeAgent();
+    }
+    return null;
   }
 
   protected final DroolsManagedConnectionFactory getCreator() {
@@ -91,7 +99,7 @@ public class DroolsManagedConnection implements ManagedConnection, Dissociatable
     return this.connectionRequestInfo;
   }
 
-  protected void fireConnectionClosedEvent(final AbstractKnowledgeSessionUserConnection connectionHandle) {
+  protected void fireConnectionClosedEvent(final UserConnection connectionHandle) {
     final ConnectionEventListener[] ls;
     synchronized (this.listeners) {
       if (this.listeners.isEmpty()) {
@@ -133,36 +141,39 @@ public class DroolsManagedConnection implements ManagedConnection, Dissociatable
 
   @Override
   public final void associateConnection(final Object connection) throws ResourceException {
+
     /*
       The container uses the associateConnection method to change the
       association of an application-level connection handle with a
       ManagedConnection instance. The container finds the right
-      ManagedConnection instance, depending on the connection sharing scope, and
-      calls the associateConnection method. To achieve this, the container needs
-      to keep track of connection handles acquired by component instances and
-      ManagedConnection instances using an implementation-specific mechanism.
+      ManagedConnection instance, depending on the connection sharing
+      scope, and calls the associateConnection method. To achieve
+      this, the container needs to keep track of connection handles
+      acquired by component instances and ManagedConnection instances
+      using an implementation-specific mechanism.
 
-      The associateConnection method implementation for a ManagedConnection
-      should dissociate the connection handle passed as a parameter from its
-      currently associated ManagedConnection and associate the new connection
-      handle with itself.
+      The associateConnection method implementation for a
+      ManagedConnection should dissociate the connection handle passed
+      as a parameter from its currently associated ManagedConnection
+      and associate the new connection handle with itself.
 
-      Note that the switching of connection associations must happen only for
-      connection handles and ManagedConnection instances that correspond to the
-      same ManagedConnectionFactory instance. The container should enforce this
-      restriction in an implementation-specific manner. If a container cannot
-      enforce the restriction, the container should not use the connection
+      Note that the switching of connection associations must happen
+      only for connection handles and ManagedConnection instances that
+      correspond to the same ManagedConnectionFactory instance. The
+      container should enforce this restriction in an
+      implementation-specific manner. If a container cannot enforce
+      the restriction, the container should not use the connection
       association mechanism.
     */
 
-    if (connection instanceof AbstractKnowledgeSessionUserConnection) {      
-      this.associateConnection((AbstractKnowledgeSessionUserConnection)connection);
+    if (connection instanceof UserConnection) {      
+      this.associateConnection((UserConnection)connection);
     } else if (connection != null) {
-      throw new ResourceException("Expecting a ManagedConnection that was an instance of " + AbstractKnowledgeSessionUserConnection.class + "; instead got " + connection);
+      throw new ResourceException("Expecting a ManagedConnection that was an instance of " + UserConnection.class + "; instead got " + connection);
     }
   }
 
-  public void associateConnection(final AbstractKnowledgeSessionUserConnection handle) throws ResourceException {
+  public void associateConnection(final UserConnection handle) throws ResourceException {
     if (handle != null) {
       synchronized (this.handles) {
         this.handles.add(handle);
@@ -174,10 +185,10 @@ public class DroolsManagedConnection implements ManagedConnection, Dissociatable
   @Override
   public void dissociateConnections() {
     synchronized (this.handles) {
-      final Iterator<AbstractKnowledgeSessionUserConnection> i = this.handles.iterator();
+      final Iterator<UserConnection> i = this.handles.iterator();
       assert i != null;
       while (i.hasNext()) {
-        final AbstractKnowledgeSessionUserConnection handle = i.next();
+        final UserConnection handle = i.next();
         if (handle != null) {
           handle.setCreator(null);
         }
@@ -194,8 +205,8 @@ public class DroolsManagedConnection implements ManagedConnection, Dissociatable
   @Override
   public XAResource getXAResource() throws ResourceException {
     /*
-      Each time a ManagedConnection.getXAResource method is called, the same
-      XAResource instance has to be returned.
+      Each time a ManagedConnection.getXAResource method is called,
+      the same XAResource instance has to be returned.
     */
     throw new NotSupportedException();
   }
@@ -220,16 +231,15 @@ public class DroolsManagedConnection implements ManagedConnection, Dissociatable
 
   /**
    * Closes the supplied connection handle by {@linkplain
-   * #fireConnectionClosedEvent(AbstractKnowledgeSessionUserConnection) firing
-   * a <tt>ConnectionEvent</tt> indicating the closing}, and completely severing
-   * ties between this {@link DroolsManagedConnection} and the supplied {@link
-   * AbstractKnowledgeSessionUserConnection}.
+   * #fireConnectionClosedEvent(UserConnection) firing a
+   * <tt>ConnectionEvent</tt> indicating the closing}, and completely
+   * severing ties between this {@link DroolsManagedConnection} and
+   * the supplied {@link UserConnection}.
    *
-   * @param handle the {@link AbstractKnowledgeSessionUserConnection} to close.
-   * If the value of this parameter is {@code null}, then no action will be
-   * taken.
+   * @param handle the {@link UserConnection} to close.  If the value
+   * of this parameter is {@code null}, then no action will be taken.
    */
-  protected void closeAndDetach(final AbstractKnowledgeSessionUserConnection handle) {
+  protected void closeAndDetach(final UserConnection handle) {
     if (handle != null) {
       this.fireConnectionClosedEvent(handle);
       handle.setCreator(null);
@@ -243,26 +253,28 @@ public class DroolsManagedConnection implements ManagedConnection, Dissociatable
   public void cleanup() throws ResourceException {
     /*
       The method ManagedConnection.cleanup initiates a cleanup of any
-      client-specific state maintained by a ManagedConnection instance. 
+      client-specific state maintained by a ManagedConnection
+      instance.
 
-      The cleanup must invalidate all connection handles created using the
-      ManagedConnection instance.
+      The cleanup must invalidate all connection handles created using
+      the ManagedConnection instance.
 
-      Any attempt by an application component to use the associated connection handle
-      after cleanup of the underlying ManagedConnection should result in an
-      exception.
+      Any attempt by an application component to use the associated
+      connection handle after cleanup of the underlying
+      ManagedConnection should result in an exception.
 
       The container always drives the cleanup of a ManagedConnection
-      instance. The container keeps track of created connection handles in an
-      implementation specific mechanism. It invokes ManagedConnection.cleanup
-      when it has to invalidate all connection handles associated with this
-      ManagedConnection instance and put the ManagedConnection instance back in
-      to the pool. This may be called after the end of a connection sharing
-      scope or when the last associated connection handle is closed for a
-      ManagedConnection instance.
+      instance. The container keeps track of created connection
+      handles in an implementation specific mechanism. It invokes
+      ManagedConnection.cleanup when it has to invalidate all
+      connection handles associated with this ManagedConnection
+      instance and put the ManagedConnection instance back in to the
+      pool. This may be called after the end of a connection sharing
+      scope or when the last associated connection handle is closed
+      for a ManagedConnection instance.
 
-      The invocation of the ManagedConnection.cleanup method on an already
-      cleaned-up connection should not throw an exception.
+      The invocation of the ManagedConnection.cleanup method on an
+      already cleaned-up connection should not throw an exception.
     */
     this.dissociateConnections();
   }
@@ -270,52 +282,55 @@ public class DroolsManagedConnection implements ManagedConnection, Dissociatable
   @Override
   public void destroy() throws ResourceException {
     /*
-      An application server should explicitly call ManagedConnection.destroy to
-      destroy a physical connection. An application server should destroy a
-      physical connection to manage the size of its connection pool and to
-      reclaim system resources.
+      An application server should explicitly call
+      ManagedConnection.destroy to destroy a physical connection. An
+      application server should destroy a physical connection to
+      manage the size of its connection pool and to reclaim system
+      resources.
 
-      A resource adapter should destroy all allocated system resources for this
-      ManagedConnection instance when the method destroy is called.
+      A resource adapter should destroy all allocated system resources
+      for this ManagedConnection instance when the method destroy is
+      called.
     */
   }
 
   @Override
   public Object getConnection(final Subject subject, final ConnectionRequestInfo requestInfo) throws ResourceException {
     /*
-      Note - The connector architecture allows one or more ManagedConnection
-      instances to be multiplexed over a single physical pipe to an
-      EIS. However, for simplicity, this specification describes a
-      ManagedConnection instance as being mapped 1-1 to a physical connection.
+      Note - The connector architecture allows one or more
+      ManagedConnection instances to be multiplexed over a single
+      physical pipe to an EIS. However, for simplicity, this
+      specification describes a ManagedConnection instance as being
+      mapped 1-1 to a physical connection.
 
       [...]
 
-      The getConnection method creates a new application-level connection
-      handle. A connection handle is tied to an underlying physical connection
-      represented by a ManagedConnection instance. [...] A connection handle is
-      tied to its ManagedConnection instance in a resource adapter
+      The getConnection method creates a new application-level
+      connection handle. A connection handle is tied to an underlying
+      physical connection represented by a ManagedConnection
+      instance. [...] A connection handle is tied to its
+      ManagedConnection instance in a resource adapter
       implementation-specific way.
 
-      A ManagedConnection instance may use the getConnection method to change
-      the state of the physical connection based on the Subject and
-      ConnectionRequestInfo arguments. For example, a resource adapter can
-      reauthenticate a physical connection to the underlying EIS when the
-      application server calls the getConnection method. Section 9.1.9,
-      "ManagedConnection" on page 9-14 specifies re-authentication requirements
-      in more detail.
+      A ManagedConnection instance may use the getConnection method to
+      change the state of the physical connection based on the Subject
+      and ConnectionRequestInfo arguments. For example, a resource
+      adapter can reauthenticate a physical connection to the
+      underlying EIS when the application server calls the
+      getConnection method. Section 9.1.9, "ManagedConnection" on page
+      9-14 specifies re-authentication requirements in more detail.
       
       [...]
 
-      It is strongly recommended that resource adapters provide support for
-      concurrent access to a ManagedConnection instance from multiple connection
-      handles. This may be required in a future release of the specification.
+      It is strongly recommended that resource adapters provide
+      support for concurrent access to a ManagedConnection instance
+      from multiple connection handles. This may be required in a
+      future release of the specification.
     */
-    AbstractKnowledgeSessionUserConnection handle = null;
-    final DroolsManagedConnectionFactory creator = this.getCreator();
-    assert creator != null;
+    UserConnection handle = null;
     KnowledgeAgent knowledgeAgent = null;
     try {
-      knowledgeAgent = creator.getKnowledgeAgent();
+      knowledgeAgent = this.getKnowledgeAgent();
     } catch (final InterruptedException i) {
       Thread.currentThread().interrupt();
       throw new ResourceAdapterInternalException(i);

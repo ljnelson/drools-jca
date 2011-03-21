@@ -27,40 +27,77 @@
  */
 package com.google.code.drools.jca;
 
+import java.io.Closeable;
+
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;
 
+import javax.resource.ResourceException;
+
+import javax.resource.spi.ConnectionRequestInfo;
+import javax.resource.spi.LazyAssociatableConnectionManager;
+import javax.resource.spi.ManagedConnection;
+import javax.resource.spi.ManagedConnectionFactory;
+
 import org.drools.KnowledgeBase;
+import org.drools.RuntimeDroolsException;
+import org.drools.SessionConfiguration;
+import org.drools.StatefulSession;
 
-import org.drools.time.SessionClock;
+import org.drools.command.Command;
 
-import org.drools.runtime.KnowledgeRuntime;
-import org.drools.runtime.KnowledgeSessionConfiguration;
+import org.drools.event.process.ProcessEventListener;
+import org.drools.event.process.ProcessEventManager;
+
+import org.drools.event.rule.AgendaEventListener;
+import org.drools.event.rule.WorkingMemoryEventListener;
+
+import org.drools.impl.StatefulKnowledgeSessionImpl;
+import org.drools.impl.KnowledgeBaseImpl;
+
+import org.drools.reteoo.ReteooStatefulSession;
+
 import org.drools.runtime.Calendars;
 import org.drools.runtime.Channel;
-import org.drools.runtime.Globals;
-import org.drools.runtime.ExitPoint;
-import org.drools.runtime.ObjectFilter;
+import org.drools.runtime.CommandExecutor;
 import org.drools.runtime.Environment;
+import org.drools.runtime.ExecutionResults;
+import org.drools.runtime.ExitPoint;
+import org.drools.runtime.Globals;
+import org.drools.runtime.KnowledgeRuntime;
+import org.drools.runtime.KnowledgeSessionConfiguration;
+import org.drools.runtime.ObjectFilter;
 import org.drools.runtime.StatefulKnowledgeSession;
 
-import org.drools.runtime.process.ProcessRuntime;
 import org.drools.runtime.process.ProcessInstance;
+import org.drools.runtime.process.ProcessRuntime;
 import org.drools.runtime.process.WorkItemManager;
 
-import org.drools.runtime.rule.StatefulRuleSession;
-import org.drools.runtime.rule.AgendaFilter;
-import org.drools.runtime.rule.WorkingMemoryEntryPoint;
 import org.drools.runtime.rule.Agenda;
+import org.drools.runtime.rule.AgendaFilter;
 import org.drools.runtime.rule.FactHandle;
 import org.drools.runtime.rule.LiveQuery;
 import org.drools.runtime.rule.QueryResults;
+import org.drools.runtime.rule.StatefulRuleSession;
 import org.drools.runtime.rule.ViewChangedEventListener;
+import org.drools.runtime.rule.WorkingMemoryEntryPoint;
 
-import javax.resource.spi.ConnectionRequestInfo;
+import org.drools.time.SessionClock;
 
-public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSessionUserConnection<StatefulKnowledgeSession> implements StatefulKnowledgeSession {
+public class StatefulKnowledgeSessionUserConnection extends StatefulKnowledgeSessionImpl implements UserConnection<DroolsManagedConnection> {
+
+  private DroolsManagedConnection creator;
+  
+  private final Object creatorLock;
+
+  private LazyAssociatableConnectionManager cm;
+
+  private ManagedConnectionFactory mcf;
+
+  private ConnectionRequestInfo cri; 
+
+  private StatefulKnowledgeSession delegate;
 
 
   /*
@@ -69,9 +106,307 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
 
 
   protected StatefulKnowledgeSessionUserConnection(final DroolsManagedConnection creator, final StatefulKnowledgeSession delegate, final ConnectionRequestInfo connectionRequestInfo) {
-    super(creator, connectionRequestInfo, delegate);
+    super(extractReteooStatefulSession(delegate), delegate.getKnowledgeBase());
+    this.creatorLock = new byte[0];
+    this.setCreator(creator);
+    this.setDelegate(delegate);
+    this.cri = connectionRequestInfo;
   }
 
+  /**
+   * Returns a {@link ReteooStatefulSession} that is extracted from
+   * the supplied {@link StatefulKnowledgeSession}.
+   *
+   * <h3>Design Notes</h3>
+   *
+   * <p>Drools likes to pretend that it is built around interfaces and
+   * implementations, but in reality throughout the codebase a
+   * particular implementation of an interface is assumed.  For
+   * example, attempts to serialize a {@link StatefulKnowledgeSession}
+   * will fail unless that {@link StatefulKnowledgeSession} is, in
+   * fact, a descendant of the {@link StatefulKnowledgeSessionImpl}
+   * class.</p>
+   *
+   * <p>This means, among other things that <em>this</em> class must
+   * inherit from {@link StatefulKnowledgeSessionImpl}.  To do
+   * <em>that</em>, we have to make sure that inside this class'
+   * constructor we can come up with a {@link ReteooStatefulSession}
+   * since it is one of the required parameters of the {@linkplain
+   * StatefulKnowledgeSessionImpl#StatefulKnowledgeSessionImpl(ReteooStatefulSession,
+   * KnowledgeBase) <tt>StatefulKnowledgeSessionImpl</tt>
+   * constructor}.</p>
+   *
+   * <p>This method hides the gory details of extracting such an
+   * instance from an ordinary {@link StatefulKnowledgeSession},
+   * provided that the supplied {@link StatefulKnowledgeSession}
+   * offers up a {@link KnowledgeBaseImpl} as the return value of its
+   * {@link StatefulKnowledgeSession#getKnowledgeBase()} method.</p>
+   *
+   * @param delegate the {@link StatefulKnowledgeSession} from which
+   * to perform the extraction.  The value of this parameter must not
+   * be {@code null}.
+   *
+   * @return a {@link ReteooStatefulSession}.  This method never
+   * returns {@code null}.
+   *
+   * @exception IllegalArgumentException if {@code delegate} is {@code null}
+   *
+   * @exception IllegalStateException if {@code
+   * delegate.getKnowledgeBase()} is not an instance of {@link
+   * KnowledgeBaseImpl}
+   *
+   * @exception ClassCastException if the innards of Drools change
+   * such that all these implementation assumptions (that Drools
+   * itself makes) change
+   */
+  private static final ReteooStatefulSession extractReteooStatefulSession(final StatefulKnowledgeSession delegate) {
+    if (delegate == null) {
+      throw new IllegalArgumentException("delegate", new NullPointerException("delegate == null"));
+    }
+    final KnowledgeBase kb = delegate.getKnowledgeBase();
+    if (kb == null) {
+      throw new IllegalStateException("delegate.getKnowledgeBase() == null");
+    }
+    assert kb instanceof KnowledgeBaseImpl;
+    final StatefulSession statefulSession = ((KnowledgeBaseImpl)kb).ruleBase.newStatefulSession((SessionConfiguration)delegate.getSessionConfiguration(), delegate.getEnvironment());
+    assert statefulSession instanceof ReteooStatefulSession;
+    return (ReteooStatefulSession)statefulSession;
+  }
+
+
+  /*
+   * Delegate property.
+   */
+
+
+  protected StatefulKnowledgeSession getDelegate() {
+    return this.delegate;
+  }
+
+  protected void setDelegate(final StatefulKnowledgeSession delegate) {
+    this.delegate = delegate;
+  }
+
+
+  /*
+   * Creator property.
+   */
+
+  
+  @Override
+  public DroolsManagedConnection getCreator() {
+    synchronized (this.creatorLock) {
+      return this.creator;
+    }
+  }
+
+  @Override
+  public final void setCreator(final DroolsManagedConnection creator) {
+    synchronized (this.creatorLock) {
+      this.creator = creator;
+      if (creator != null) {
+        this.mcf = creator.getCreator();
+      }
+    }
+  }
+
+
+  /*
+   * ConnectionRequestInfo property.
+   */
+
+
+  public ConnectionRequestInfo getConnectionRequestInfo() {
+    return this.cri;
+  }
+
+
+  /*
+   * LazyAssociatableConnectionManager property.  The J2EE Connector
+   * Architecture 1.5 specification, figure 7-15, implies this should be a legal
+   * reference to hold onto.
+   */
+
+
+  public LazyAssociatableConnectionManager getLazyAssociatableConnectionManager() {
+    return this.cm;
+  }
+
+  public void setLazyAssociatableConnectionManager(final LazyAssociatableConnectionManager cm) {
+    this.cm = cm;
+  }
+  
+
+  protected final boolean associateConnection() {
+    final LazyAssociatableConnectionManager cm = this.getLazyAssociatableConnectionManager();
+    if (cm != null) {
+      synchronized (this.creatorLock) {
+        try {
+          cm.associateConnection(this, this.mcf, this.getConnectionRequestInfo());
+        } catch (final ResourceException kaboom) {
+          throw new RuntimeDroolsException(kaboom);
+        }
+      }
+      return true;
+    }
+    return false;
+  }
+
+
+  /*
+   * CommandExecutor implementation.
+   */
+
+
+  @SuppressWarnings("unchecked")
+  @Override
+  public <T> T execute(final Command<T> command) {
+    T returnValue = null;
+    final boolean associated = this.associateConnection();
+    final CommandExecutor delegate = this.getDelegate();
+    if (delegate != null) {
+      returnValue = delegate.execute(command);
+    }
+    if (!associated) {
+      this.close();
+    }
+    return returnValue;
+  }
+
+
+  /*
+   * WorkingMemoryEventManager implementation.
+   */
+
+
+  @Override
+  public void addEventListener(final AgendaEventListener l) {
+    if (l != null) {
+      final boolean associated = this.associateConnection();
+      final StatefulKnowledgeSession delegate = this.getDelegate();
+      if (delegate != null) {
+        delegate.addEventListener(l);
+      }
+      if (!associated) {
+        this.close();
+      }
+    }
+  }
+
+  @Override
+  public void removeEventListener(final AgendaEventListener l) {
+    if (l != null) {
+      final boolean associated = this.associateConnection();
+      final StatefulKnowledgeSession delegate = this.getDelegate();
+      if (delegate != null) {
+        delegate.removeEventListener(l);
+      }
+      if (!associated) {
+        this.close();
+      }
+    }
+  }
+
+  public Collection<AgendaEventListener> getAgendaEventListeners() {
+    final boolean associated = this.associateConnection();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
+    if (delegate == null) {
+      return Collections.emptySet();
+    }    
+    final Collection<AgendaEventListener> returnValue = delegate.getAgendaEventListeners();
+    if (!associated) {
+      this.close();
+    }
+    return returnValue;
+  }
+
+  @Override
+  public void addEventListener(final WorkingMemoryEventListener l) {
+    if (l != null) {
+      final boolean associated = this.associateConnection();
+      final StatefulKnowledgeSession delegate = this.getDelegate();
+      if (delegate != null) {
+        delegate.addEventListener(l);
+      }
+      if (!associated) {
+        this.close();
+      }
+    }
+  }
+
+  @Override
+  public void removeEventListener(final WorkingMemoryEventListener l) {
+    if (l != null) {
+      final boolean associated = this.associateConnection();
+      final StatefulKnowledgeSession delegate = this.getDelegate();
+      if (delegate != null) {
+        delegate.removeEventListener(l);
+      }
+      if (!associated) {
+        this.close();
+      }
+    }
+  }
+
+  public Collection<WorkingMemoryEventListener> getWorkingMemoryEventListeners() {
+    final StatefulKnowledgeSession delegate = this.getDelegate();
+    final boolean associated = this.associateConnection();
+    if (delegate == null) {
+      return Collections.emptySet();
+    }
+    final Collection<WorkingMemoryEventListener> returnValue = delegate.getWorkingMemoryEventListeners();
+    if (!associated) {
+      this.close();
+    }
+    return returnValue;
+  }
+
+
+  /*
+   * ProcessEventManager implementation.
+   */
+
+
+  @Override
+  public void addEventListener(final ProcessEventListener l) {
+    if (l != null) {
+      final boolean associated = this.associateConnection();
+      final StatefulKnowledgeSession delegate = this.getDelegate();
+      if (delegate != null) {
+        delegate.addEventListener(l);
+      }
+      if (!associated) {
+        this.close();
+      }
+    }
+  }
+
+  @Override
+  public void removeEventListener(final ProcessEventListener l) {
+    if (l != null) {
+      final boolean associated = this.associateConnection();
+      final StatefulKnowledgeSession delegate = this.getDelegate();
+      if (delegate != null) {
+        delegate.removeEventListener(l);
+      }
+      if (!associated) {
+        this.close();
+      }
+    }
+  }
+
+  public Collection<ProcessEventListener> getProcessEventListeners() {
+    final boolean associated = this.associateConnection();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
+    if (delegate == null) {      
+      return Collections.emptySet();
+    }
+    final Collection<ProcessEventListener> returnValue = delegate.getProcessEventListeners();
+    if (!associated) {
+      this.close();
+    }
+    return returnValue;
+  }
 
   /*
    * StatefulRuleSession implementation.
@@ -80,7 +415,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public int fireAllRules() {
     final boolean associated = this.associateConnection();
-    final StatefulRuleSession delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       return delegate.fireAllRules();
     }
@@ -90,7 +425,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public int fireAllRules(final int max) {
     final boolean associated = this.associateConnection();
-    final StatefulRuleSession delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       return delegate.fireAllRules(max);
     }
@@ -100,7 +435,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public int fireAllRules(final AgendaFilter filter) {
     final boolean associated = this.associateConnection();
-    final StatefulRuleSession delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       return delegate.fireAllRules(filter);
     }
@@ -110,7 +445,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public void fireUntilHalt() {
     final boolean associated = this.associateConnection();
-    final StatefulRuleSession delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       delegate.fireUntilHalt();
     }
@@ -119,7 +454,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public void fireUntilHalt(final AgendaFilter filter) {
     final boolean associated = this.associateConnection();
-    final StatefulRuleSession delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       delegate.fireUntilHalt(filter);
     }
@@ -134,7 +469,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public Calendars getCalendars() {
     final boolean associated = this.associateConnection();
-    final KnowledgeRuntime delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       return delegate.getCalendars();
     }
@@ -144,7 +479,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public Map<String, Channel> getChannels() {
     final boolean associated = this.associateConnection();
-    final KnowledgeRuntime delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       return delegate.getChannels();
     }
@@ -154,7 +489,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public Globals getGlobals() {
     final boolean associated = this.associateConnection();
-    final KnowledgeRuntime delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       return delegate.getGlobals();
     }
@@ -164,7 +499,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public Object getGlobal(final String global) {
     final boolean associated = this.associateConnection();
-    final KnowledgeRuntime delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       return delegate.getGlobal(global);
     }
@@ -174,7 +509,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public void setGlobal(final String key, final Object value) {
     final boolean associated = this.associateConnection();
-    final KnowledgeRuntime delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       delegate.setGlobal(key, value);
     }
@@ -183,7 +518,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public Environment getEnvironment() {
     final boolean associated = this.associateConnection();
-    final KnowledgeRuntime delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       return delegate.getEnvironment();
     }
@@ -193,7 +528,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public KnowledgeBase getKnowledgeBase() {
     final boolean associated = this.associateConnection();
-    final KnowledgeRuntime delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       return delegate.getKnowledgeBase();
     }
@@ -203,7 +538,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public void registerChannel(final String name, final Channel channel) {
     final boolean associated = this.associateConnection();
-    final KnowledgeRuntime delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       delegate.registerChannel(name, channel);
     }
@@ -212,7 +547,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public void registerExitPoint(final String name, final ExitPoint exitPoint) {
     final boolean associated = this.associateConnection();
-    final KnowledgeRuntime delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       delegate.registerExitPoint(name, exitPoint);
     }
@@ -221,7 +556,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public void unregisterChannel(final String name) {
     final boolean associated = this.associateConnection();
-    final KnowledgeRuntime delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       delegate.unregisterChannel(name);
     }
@@ -230,7 +565,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public void unregisterExitPoint(final String name) {
     final boolean associated = this.associateConnection();
-    final KnowledgeRuntime delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       delegate.unregisterExitPoint(name);
     }
@@ -239,7 +574,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public <T extends SessionClock> T getSessionClock() {
     final boolean associated = this.associateConnection();
-    final KnowledgeRuntime delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       return delegate.<T>getSessionClock(); // see http://bugs.sun.com/bugdatabase/view_bug.do?bug_id=6302954 for this syntax
     }
@@ -249,7 +584,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public KnowledgeSessionConfiguration getSessionConfiguration() {
     final boolean associated = this.associateConnection();
-    final KnowledgeRuntime delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       return delegate.getSessionConfiguration();
     }
@@ -265,7 +600,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public Agenda getAgenda() {
     final boolean associated = this.associateConnection();
-    final KnowledgeRuntime delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       return delegate.getAgenda();
     }
@@ -275,7 +610,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public QueryResults getQueryResults(final String query, final Object... arguments) {
     final boolean associated = this.associateConnection();
-    final KnowledgeRuntime delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       return delegate.getQueryResults(query, arguments);
     }
@@ -285,7 +620,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public WorkingMemoryEntryPoint getWorkingMemoryEntryPoint(final String name) {
     final boolean associated = this.associateConnection();
-    final KnowledgeRuntime delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       return delegate.getWorkingMemoryEntryPoint(name);
     }
@@ -295,7 +630,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public Collection<? extends WorkingMemoryEntryPoint> getWorkingMemoryEntryPoints() {
     final boolean associated = this.associateConnection();
-    final KnowledgeRuntime delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       return delegate.getWorkingMemoryEntryPoints();
     }
@@ -305,7 +640,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public void halt() {
     final boolean associated = this.associateConnection();
-    final KnowledgeRuntime delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       delegate.halt();
     }
@@ -314,7 +649,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public LiveQuery openLiveQuery(final String query, final Object[] arguments, final ViewChangedEventListener listener) {
     final boolean associated = this.associateConnection();
-    final KnowledgeRuntime delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       return delegate.openLiveQuery(query, arguments, listener);
     }
@@ -328,7 +663,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public String getEntryPointId() {
     final boolean associated = this.associateConnection();
-    final WorkingMemoryEntryPoint delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       return delegate.getEntryPointId();
     }
@@ -338,7 +673,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public long getFactCount() {
     final boolean associated = this.associateConnection();
-    final WorkingMemoryEntryPoint delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       return delegate.getFactCount();
     }
@@ -348,7 +683,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public FactHandle getFactHandle(final Object object) {
     final boolean associated = this.associateConnection();
-    final WorkingMemoryEntryPoint delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       return delegate.getFactHandle(object);
     }
@@ -358,7 +693,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public <T extends FactHandle> Collection<T> getFactHandles() {
     final boolean associated = this.associateConnection();
-    final WorkingMemoryEntryPoint delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       return delegate.getFactHandles();
     }
@@ -368,7 +703,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public <T extends FactHandle> Collection<T> getFactHandles(final ObjectFilter filter) {
     final boolean associated = this.associateConnection();
-    final WorkingMemoryEntryPoint delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       return delegate.getFactHandles(filter);
     }
@@ -378,7 +713,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public Object getObject(final FactHandle handle) {
     final boolean associated = this.associateConnection();
-    final WorkingMemoryEntryPoint delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       return delegate.getObject(handle);
     }
@@ -388,7 +723,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public Collection<Object> getObjects() {
     final boolean associated = this.associateConnection();
-    final WorkingMemoryEntryPoint delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       return delegate.getObjects();
     }
@@ -398,7 +733,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public Collection<Object> getObjects(final ObjectFilter filter) {
     final boolean associated = this.associateConnection();
-    final WorkingMemoryEntryPoint delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       return delegate.getObjects(filter);
     }
@@ -408,7 +743,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public FactHandle insert(final Object object) {
     final boolean associated = this.associateConnection();
-    final WorkingMemoryEntryPoint delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       return delegate.insert(object);
     }
@@ -418,7 +753,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public void retract(final FactHandle handle) {
     final boolean associated = this.associateConnection();
-    final WorkingMemoryEntryPoint delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       delegate.retract(handle);
     }
@@ -427,7 +762,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public void update(final FactHandle handle, final Object object) {
     final boolean associated = this.associateConnection();
-    final WorkingMemoryEntryPoint delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       delegate.update(handle, object);
     }
@@ -442,7 +777,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public void abortProcessInstance(final long id) {
     final boolean associated = this.associateConnection();
-    final ProcessRuntime delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       delegate.abortProcessInstance(id);
     }
@@ -451,7 +786,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public ProcessInstance getProcessInstance(final long id) {
     final boolean associated = this.associateConnection();
-    final ProcessRuntime delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       return delegate.getProcessInstance(id);
     }
@@ -461,7 +796,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public Collection<ProcessInstance> getProcessInstances() {
     final boolean associated = this.associateConnection();
-    final ProcessRuntime delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       return delegate.getProcessInstances();
     }
@@ -471,7 +806,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public WorkItemManager getWorkItemManager() {
     final boolean associated = this.associateConnection();
-    final ProcessRuntime delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       return delegate.getWorkItemManager();
     }
@@ -481,7 +816,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public void signalEvent(final String type, final Object event) {
     final boolean associated = this.associateConnection();
-    final ProcessRuntime delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       delegate.signalEvent(type, event);
     }
@@ -490,7 +825,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public void signalEvent(final String type, final Object event, final long processId) {
     final boolean associated = this.associateConnection();
-    final ProcessRuntime delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       delegate.signalEvent(type, event, processId);
     }
@@ -499,7 +834,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public ProcessInstance startProcess(final String processId) {
     final boolean associated = this.associateConnection();
-    final ProcessRuntime delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       return delegate.startProcess(processId);
     }
@@ -509,7 +844,7 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   @Override
   public ProcessInstance startProcess(final String processId, final Map<String, Object> parameters) {
     final boolean associated = this.associateConnection();
-    final ProcessRuntime delegate = this.getDelegate();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
     if (delegate != null) {
       return delegate.startProcess(processId, parameters);
     }
@@ -524,6 +859,11 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
   
   @Override
   public void dispose() {
+    final boolean associated = this.associateConnection();
+    final StatefulKnowledgeSession delegate = this.getDelegate();
+    if (delegate != null) {
+      delegate.dispose();
+    }
     this.close();
   }
 
@@ -537,14 +877,29 @@ public class StatefulKnowledgeSessionUserConnection extends AbstractKnowledgeSes
     return Integer.MIN_VALUE;
   }
 
+
+  /*
+   * Closeable implementation.
+   */
+
+
   @Override
   public void close() {
-    final boolean associated = this.associateConnection();
-    final StatefulKnowledgeSession delegate = this.getDelegate();
-    if (delegate != null) {
-      delegate.dispose();
+    /*
+      The [c]onnection [handle] instance delegates the [resource-adapter
+      specific] close method to [its] associated ManagedConnection instance. The
+      delegation happens through an association between ManagedConnection
+      instance and the corresponding connection handle Connection instance. The
+      mechanism by which this association is achieved is specific to the
+      implementation of a resource adapter.
+    */
+    synchronized (this.creatorLock) {
+      final DroolsManagedConnection creator = this.getCreator();
+      if (creator != null) {
+        creator.closeAndDetach(this);
+      }
+      this.setCreator(null);
     }
-    super.close();
   }
 
 }

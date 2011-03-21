@@ -182,7 +182,7 @@
 
     <!-- Version-related properties -->
     <droolsVersion>5.2.0-SNAPSHOT</droolsVersion>
-    <glassfishVersion>3.1-b41</glassfishVersion>
+    <glassfishVersion>3.1</glassfishVersion>
     <javaxApisVersion>${glassfishVersion}</javaxApisVersion>
     <javaxResourceVersion>${javaxApisVersion}</javaxResourceVersion>
     <junitVersion>4.8.2</junitVersion>
