@@ -1,5 +1,7 @@
 package com.google.code.drools.jca;
 
+dialect "mvel";
+
 rule "Say hello"
     when 
     then System.out.println("Hello, world!");
