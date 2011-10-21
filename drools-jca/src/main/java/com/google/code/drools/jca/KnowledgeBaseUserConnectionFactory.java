@@ -31,6 +31,7 @@ import java.io.Serializable;
 
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Set;
 
 import java.util.concurrent.Future;
 import java.util.concurrent.ExecutionException;
@@ -169,6 +170,14 @@ public class KnowledgeBaseUserConnectionFactory implements KnowledgeBase, Serial
    * KnowledgeBase implementation.
    */
 
+  @Override
+  public Set<String> getEntryPointIds() {
+    final KnowledgeBase kb = this.getKnowledgeBase();
+    if (kb == null) {
+      return Collections.emptySet();
+    }
+    return kb.getEntryPointIds();
+  }
 
   @Override
   public void addKnowledgePackages(final Collection<KnowledgePackage> c) {

@@ -4,6 +4,6 @@ dialect "mvel";
 
 rule "Say hello"
     when 
-    then System.out.println("Hello, world!");
+    print("Hello, world!");
 end
 
