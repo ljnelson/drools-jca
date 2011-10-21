@@ -6,7 +6,7 @@
   <packaging>rar</packaging>
 
   <parent>
-    <groupId>com.google.code</groupId>
+    <groupId>com.edugility</groupId>
     <artifactId>drools-jca-pom</artifactId>
     <version>1.0-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>

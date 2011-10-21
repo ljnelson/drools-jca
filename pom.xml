@@ -2,33 +2,60 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
-  <groupId>com.google.code</groupId>
+  <groupId>com.edugility</groupId>
   <artifactId>drools-jca-pom</artifactId>
   <version>1.0-SNAPSHOT</version>
   <packaging>pom</packaging>
 
+  <parent>
+    <groupId>org.sonatype.oss</groupId>
+    <artifactId>oss-parent</artifactId>
+    <version>7</version>
+  </parent>
+
   <name>Drools JCA POM</name>
   <description>Drools JCA-compliant resource adapter aggregator POM</description>
   <inceptionYear>2009</inceptionYear>
-  <url>http://code.google.com/p/drools-jca/</url>
-
-  <licenses>
-    <license>
-      <name>MIT License</name>
-      <distribution>repo</distribution>
-      <comments>The MIT license.</comments>
-    </license>
-  </licenses>
-
-  <issueManagement>
-    <system>Google Code</system>
-    <url>http://code.google.com/p/drools-jca/issues/list</url>
-  </issueManagement>
+  <url>http://github.com/ljnelson/${project.artifactId}/</url>
 
   <organization>
     <name>Laird Nelson</name>
-    <url>http://www.linkedin.com/in/ljnelson</url>
+    <url>http://about.me/lairdnelson</url>
   </organization>
+
+  <licenses>
+    <license>
+      <name>The MIT License</name>
+      <distribution>repo</distribution>
+      <comments>The MIT license.</comments>
+      <url>http://www.opensource.org/licenses/MIT</url>
+    </license>
+  </licenses>
+
+  <scm>
+    <connection>scm:git:git@github.com:ljnelson/${project.artifactId}.git</connection>
+    <developerConnection>scm:git:git@github.com:ljnelson/${project.artifactId}.git</developerConnection>
+    <url>https://github.com/ljnelson/${project.artifactId}/</url>
+  </scm>
+
+  <developers>
+    <developer>
+      <id>ljnelson</id>
+      <name>Laird Nelson</name>
+      <email>ljnelson@gmail.com</email>
+      <url>http://about.me/lairdnelson</url>
+      <roles>
+        <role>architect</role>
+        <role>developer</role>
+      </roles>
+      <timezone>-5</timezone>
+    </developer>
+  </developers>
+
+  <issueManagement>
+    <system>Github</system>
+    <url>https://github.com/ljnelson/${project.artifactId}/issues</url>
+  </issueManagement>
 
   <modules>
     <module>drools-jca</module>
@@ -37,6 +64,13 @@
 
   <dependencyManagement>
     <dependencies>
+
+      <dependency>
+        <groupId>junit</groupId>
+        <artifactId>junit</artifactId>
+        <version>${junitVersion}</version>
+        <scope>test</scope>
+      </dependency>
       
       <dependency>
         <groupId>org.apache.openejb</groupId>
@@ -47,12 +81,6 @@
 
       <dependency>
         <groupId>org.drools</groupId>
-        <artifactId>drools-core</artifactId>
-        <version>${droolsVersion}</version>
-      </dependency>
-      
-      <dependency>
-        <groupId>org.drools</groupId>
         <artifactId>drools-compiler</artifactId>
         <version>${droolsVersion}</version>
       </dependency>
@@ -61,25 +89,11 @@
         <groupId>org.glassfish</groupId>
         <artifactId>javax.resource</artifactId>
         <version>${javaxResourceVersion}</version>
-        <scope>provided</scope> <!-- This is the JCA API, so scope is "provided", not "test" -->
-      </dependency>
-      
-      <dependency>
-        <groupId>junit</groupId>
-        <artifactId>junit</artifactId>
-        <version>${junitVersion}</version>
-        <scope>test</scope>
+        <scope>provided</scope>
       </dependency>
       
     </dependencies>
   </dependencyManagement>
-
-  <dependencies>
-    <dependency>
-      <groupId>junit</groupId>
-      <artifactId>junit</artifactId>
-    </dependency>
-  </dependencies>
 
   <build>
 
@@ -88,12 +102,20 @@
 
         <plugin>
           <artifactId>maven-assembly-plugin</artifactId>
-          <version>2.2</version>
+          <version>${mavenAssemblyPluginVersion}</version>
+        </plugin>
+
+        <plugin>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <version>${mavenCompilerPluginVersion}</version>
+          <configuration>
+            <compilerArgument>-Xlint:all</compilerArgument>
+          </configuration>
         </plugin>
 
         <plugin>
           <artifactId>maven-clean-plugin</artifactId>
-          <version>2.4.1</version>
+          <version>${mavenCleanPluginVersion}</version>
           <configuration>
             <filesets>
               <fileset>
@@ -101,58 +123,101 @@
                 <includes>
                   <include>*~</include>
                   <include>src/**/*~</include>
-                </includes>              
+                </includes>
               </fileset>
             </filesets>
           </configuration>
         </plugin>
 
         <plugin>
-          <artifactId>maven-compiler-plugin</artifactId>
-          <version>2.3.2</version>
-          <configuration>
-            <compilerArgument>-Xlint:all</compilerArgument>
-            <encoding>utf-8</encoding>
-            <source>1.6</source>
-            <target>1.6</target>
-          </configuration>
+          <artifactId>maven-dependency-plugin</artifactId>
+          <version>${mavenDependencyPluginVersion}</version>
+        </plugin>
+
+        <plugin>
+          <artifactId>maven-enforcer-plugin</artifactId>
+          <version>${mavenEnforcerPluginVersion}</version>
+        </plugin>
+
+        <plugin>
+          <artifactId>maven-gpg-plugin</artifactId>
+          <version>${mavenGpgPluginVersion}</version>
         </plugin>
 
         <plugin>
           <artifactId>maven-jar-plugin</artifactId>
-          <version>2.3.1</version>
+          <version>${mavenJarPluginVersion}</version>
+        </plugin>
+
+        <plugin>
+          <artifactId>maven-javadoc-plugin</artifactId>
+          <version>${mavenJavadocPluginVersion}</version>
+        </plugin>
+
+        <plugin>
+          <artifactId>maven-plugin-plugin</artifactId>
+          <version>${mavenPluginPluginVersion}</version>
+        </plugin>
+
+        <plugin>
+          <artifactId>maven-project-info-reports-plugin</artifactId>
+          <version>${mavenProjectInfoReportsPlugin}</version>
         </plugin>
 
         <plugin>
           <artifactId>maven-rar-plugin</artifactId>
-          <version>2.2</version>
+          <version>${mavenRarPluginVersion}</version>
+        </plugin>
+
+        <plugin>
+          <artifactId>maven-release-plugin</artifactId>
+          <version>${mavenReleasePluginVersion}</version>
         </plugin>
 
         <plugin>
           <artifactId>maven-resources-plugin</artifactId>
-          <version>2.5</version> 
+          <version>${mavenResourcesPluginVersion}</version>
           <configuration>
             <delimiters>
               <delimiter>${*}</delimiter>
             </delimiters>
-            <encoding>utf-8</encoding>
             <escapeString>\</escapeString>
             <useDefaultDelimiters>false</useDefaultDelimiters>
           </configuration>
         </plugin>
 
         <plugin>
+          <artifactId>maven-scm-plugin</artifactId>
+          <version>${mavenScmPluginVersion}</version>
+        </plugin>
+
+        <plugin>
+          <artifactId>maven-site-plugin</artifactId>
+          <version>${mavenSitePluginVersion}</version>
+        </plugin>
+
+        <plugin>
+          <artifactId>maven-source-plugin</artifactId>
+          <version>${mavenSourcePluginVersion}</version>
+        </plugin>
+
+        <plugin>
           <artifactId>maven-surefire-plugin</artifactId>
-          <version>2.10</version>
+          <version>${mavenSurefirePluginVersion}</version>
           <configuration>
-            <forkMode>always</forkMode>
             <systemPropertyVariables>
               <java.util.logging.config.file>${loggingConfigFile}</java.util.logging.config.file>
               <maven.project.build.directory>${project.build.directory}</maven.project.build.directory>
+              <maven.project.build.testOutputDirectory>${project.build.testOutputDirectory}</maven.project.build.testOutputDirectory>
             </systemPropertyVariables>
             <useFile>false</useFile>
-            <useManifestOnlyJar>false</useManifestOnlyJar>
           </configuration>
+        </plugin>
+
+        <plugin>
+          <groupId>org.codehaus.mojo</groupId>
+          <artifactId>versions-maven-plugin</artifactId>
+          <version>${versionsMavenPluginVersion}</version>
         </plugin>
 
       </plugins>
@@ -179,14 +244,38 @@
     <!-- Non-version-related properties -->
     <loggingConfigFile>${basedir}/logging.properties</loggingConfigFile>
     <pomVersionControlID>$Id$</pomVersionControlID>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
     <!-- Version-related properties -->
     <droolsVersion>5.3.0.Final</droolsVersion>
-    <glassfishVersion>3.1.1</glassfishVersion>
-    <javaxApisVersion>${glassfishVersion}</javaxApisVersion>
-    <javaxResourceVersion>${javaxApisVersion}</javaxResourceVersion>
+    <javaxResourceVersion>3.1.1</javaxResourceVersion>
     <junitVersion>4.10</junitVersion>
+    <maven.compiler.source>1.6</maven.compiler.source>
+    <maven.compiler.target>1.6</maven.compiler.target>
+    <mavenAssemblyPluginVersion>2.2.1</mavenAssemblyPluginVersion>
+    <mavenCleanPluginVersion>2.4.1</mavenCleanPluginVersion>
+    <mavenCompilerPluginVersion>2.3.2</mavenCompilerPluginVersion>
+    <mavenDependencyPluginVersion>2.2</mavenDependencyPluginVersion>
+    <mavenEnforcerPluginVersion>1.0.1</mavenEnforcerPluginVersion>
+    <mavenGpgPluginVersion>1.4</mavenGpgPluginVersion>
+    <mavenJarPluginVersion>2.3.1</mavenJarPluginVersion>
+    <mavenJavadocPluginVersion>2.8</mavenJavadocPluginVersion>
+    <mavenPluginPluginVersion>2.9</mavenPluginPluginVersion>
+    <mavenPluginTestingHarnessVersion>2.0-alpha-1</mavenPluginTestingHarnessVersion>
+    <mavenProjectInfoReportsPlugin>2.4</mavenProjectInfoReportsPlugin>
+    <mavenRarPluginVersion>2.2</mavenRarPluginVersion>
+    <mavenReleasePluginVersion>2.2.1</mavenReleasePluginVersion>    
+    <mavenResourcesPluginVersion>2.5</mavenResourcesPluginVersion>
+    <mavenScmManagerPlexusVersion>${mavenScmPluginVersion}</mavenScmManagerPlexusVersion>
+    <mavenScmPluginVersion>1.5</mavenScmPluginVersion>
+    <mavenScmProviderGitexeVersion>${mavenScmPluginVersion}</mavenScmProviderGitexeVersion>
+    <mavenSitePluginVersion>3.0</mavenSitePluginVersion>
+    <mavenSourcePluginVersion>2.1.2</mavenSourcePluginVersion>
+    <mavenSurefirePluginVersion>2.9</mavenSurefirePluginVersion>
+    <mavenVersion>3.0.3</mavenVersion>
     <openEjbVersion>3.1.4</openEjbVersion>
+    <scannotationVersion>1.0.2</scannotationVersion>
+    <versionsMavenPluginVersion>1.2</versionsMavenPluginVersion>
   </properties>
 
 </project>

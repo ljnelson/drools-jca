@@ -5,7 +5,7 @@
   <artifactId>drools-jca</artifactId>
 
   <parent>
-    <groupId>com.google.code</groupId>
+    <groupId>com.edugility</groupId>
     <artifactId>drools-jca-pom</artifactId>
     <version>1.0-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
@@ -22,18 +22,13 @@
     </dependency>
 
     <dependency>
-      <groupId>org.glassfish</groupId>
-      <artifactId>javax.resource</artifactId>
-    </dependency>
-
-    <dependency>
-      <groupId>org.drools</groupId>
-      <artifactId>drools-core</artifactId>
-    </dependency>
-
-    <dependency>
       <groupId>org.drools</groupId>
       <artifactId>drools-compiler</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.glassfish</groupId>
+      <artifactId>javax.resource</artifactId>
     </dependency>
 
   </dependencies>
