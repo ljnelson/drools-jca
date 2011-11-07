@@ -38,6 +38,14 @@ import javax.resource.spi.ManagedConnectionFactory;
 
 public class KnowledgeBaseConnectionManager implements ConnectionManager {
 
+  /**
+   * A serial version identifier uniquely identifying the version of
+   * this class.  See the <a
+   * href="http://download.oracle.com/javase/6/docs/api/java/io/Serializable.html">documentation
+   * for the {@code Serializable} class</a> for details.
+   */
+  private static final long serialVersionUID = 1L;
+
   public KnowledgeBaseConnectionManager() {
     super();
   }

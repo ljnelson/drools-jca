@@ -77,7 +77,7 @@ public class JCACompliantResourceChangeNotifier extends ResourceChangeNotifierIm
   
   /**
    * Overrides {@link ResourceChangeNotifierImpl#start()} so that
-   * {@link Thread}s are not used.  Instead, this {@link {@link
+   * {@link Thread}s are not used.  Instead, this {@link
    * JCACompliantResourceChangeNotifier}'s {@link #getWorkManager()
    * WorkManager} is used.
    */

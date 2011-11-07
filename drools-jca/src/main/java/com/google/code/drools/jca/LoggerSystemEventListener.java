@@ -39,6 +39,14 @@ import java.util.logging.Level;
 
 public class LoggerSystemEventListener implements SystemEventListener, Serializable {
 
+  /**
+   * A serial version identifier uniquely identifying the version of
+   * this class.  See the <a
+   * href="http://download.oracle.com/javase/6/docs/api/java/io/Serializable.html">documentation
+   * for the {@code Serializable} class</a> for details.
+   */
+  private static final long serialVersionUID = 1L;
+
   protected transient Logger logger;
 
   public LoggerSystemEventListener() {
@@ -77,7 +85,7 @@ public class LoggerSystemEventListener implements SystemEventListener, Serializa
 
   @Override
   public void info(final String m) {
-    this.log(Level.INFO, m, null, null);
+    this.log(Level.INFO, m, null, (Object)null);
   }
 
   @Override
@@ -87,7 +95,7 @@ public class LoggerSystemEventListener implements SystemEventListener, Serializa
 
   @Override
   public void warning(final String m) {
-    this.log(Level.WARNING, m, null, null);
+    this.log(Level.WARNING, m, null, (Object)null);
   }
 
   @Override
@@ -97,17 +105,17 @@ public class LoggerSystemEventListener implements SystemEventListener, Serializa
 
   @Override
   public void exception(final Throwable t) {
-    this.log(Level.SEVERE, t == null ? "" : t.toString(), t, null);
+    this.log(Level.SEVERE, t == null ? "" : t.toString(), t, (Object)null);
   }
 
   @Override
   public void exception(final String m, final Throwable t) {
-    this.log(Level.SEVERE, m, t, null);
+    this.log(Level.SEVERE, m, t, (Object)null);
   }
 
   @Override
   public void debug(final String m) {
-    this.log(Level.FINER, m, null, null);
+    this.log(Level.FINER, m, null, (Object)null);
   }
 
   @Override

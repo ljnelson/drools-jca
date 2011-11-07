@@ -250,8 +250,10 @@
     <droolsVersion>5.3.0.Final</droolsVersion>
     <javaxResourceVersion>3.1.1</javaxResourceVersion>
     <junitVersion>4.10</junitVersion>
+    <maven.compiler.showWarnings>true</maven.compiler.showWarnings>
     <maven.compiler.source>1.6</maven.compiler.source>
     <maven.compiler.target>1.6</maven.compiler.target>
+    <maven.compiler.verbose>true</maven.compiler.verbose>
     <mavenAssemblyPluginVersion>2.2.1</mavenAssemblyPluginVersion>
     <mavenCleanPluginVersion>2.4.1</mavenCleanPluginVersion>
     <mavenCompilerPluginVersion>2.3.2</mavenCompilerPluginVersion>

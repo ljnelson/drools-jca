@@ -88,6 +88,14 @@ import org.drools.io.ResourceChangeScannerConfiguration;
 
 public class DroolsResourceAdapter implements ResourceAdapter, Serializable {
 
+  /**
+   * A serial version identifier uniquely identifying the version of
+   * this class.  See the <a
+   * href="http://download.oracle.com/javase/6/docs/api/java/io/Serializable.html">documentation
+   * for the {@code Serializable} class</a> for details.
+   */
+  private static final long serialVersionUID = 1L;
+
   private static final PropertyChangeListener[] EMPTY_PROPERTY_CHANGE_LISTENER_ARRAY = new PropertyChangeListener[0];
 
   private static final Pattern environmentVariableSubstitutionPattern = Pattern.compile("\\$\\{(.+)\\}");

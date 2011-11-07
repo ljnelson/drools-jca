@@ -63,7 +63,7 @@ import org.drools.io.ResourceChangeScannerConfiguration;
  /**
   * A {@link Serializable} {@link ManagedConnectionFactory} that vends both
   * {@link ManagedConnection} instances as well as {@link
-  * KnowledgeBaseConnectionFactory} instances in accordance with the Java
+  * KnowledgeBaseUserConnectionFactory} instances in accordance with the Java
   * Connector Architecture specification, version 1.5.
   *
   * @author <a href="mailto:ljnelson@gmail.com">Laird Nelson</a>
@@ -73,6 +73,14 @@ import org.drools.io.ResourceChangeScannerConfiguration;
   * @since January 3, 2010
   */
 public class DroolsManagedConnectionFactory implements ManagedConnectionFactory, ResourceAdapterAssociation {
+
+  /**
+   * A serial version identifier uniquely identifying the version of
+   * this class.  See the <a
+   * href="http://download.oracle.com/javase/6/docs/api/java/io/Serializable.html">documentation
+   * for the {@code Serializable} class</a> for details.
+   */
+  private static final long serialVersionUID = 1L;
 
   private static final PropertyChangeListener[] EMPTY_PROPERTY_CHANGE_LISTENER_ARRAY = new PropertyChangeListener[0];
 

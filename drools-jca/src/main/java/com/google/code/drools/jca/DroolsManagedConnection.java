@@ -70,12 +70,12 @@ public class DroolsManagedConnection implements ManagedConnection, Dissociatable
 
   private final ConnectionRequestInfo connectionRequestInfo;
 
-  private final Set<UserConnection> handles;
+  private final Set<UserConnection<DroolsManagedConnection>> handles;
 
   public DroolsManagedConnection(final DroolsManagedConnectionFactory creator, final ConnectionRequestInfo connectionRequestInfo) {
     super();
     this.listeners = new LinkedHashSet<ConnectionEventListener>();
-    this.handles = new HashSet<UserConnection>();
+    this.handles = new HashSet<UserConnection<DroolsManagedConnection>>();
     this.creator = creator;
     this.connectionRequestInfo = connectionRequestInfo;
     if (creator == null) {
@@ -99,7 +99,7 @@ public class DroolsManagedConnection implements ManagedConnection, Dissociatable
     return this.connectionRequestInfo;
   }
 
-  protected void fireConnectionClosedEvent(final UserConnection connectionHandle) {
+  protected void fireConnectionClosedEvent(final UserConnection<DroolsManagedConnection> connectionHandle) {
     final ConnectionEventListener[] ls;
     synchronized (this.listeners) {
       if (this.listeners.isEmpty()) {
@@ -167,13 +167,15 @@ public class DroolsManagedConnection implements ManagedConnection, Dissociatable
     */
 
     if (connection instanceof UserConnection) {      
-      this.associateConnection((UserConnection)connection);
+      @SuppressWarnings("unchecked")
+      final UserConnection<DroolsManagedConnection> c = (UserConnection<DroolsManagedConnection>)connection;
+      this.associateConnection(c);
     } else if (connection != null) {
       throw new ResourceException("Expecting a ManagedConnection that was an instance of " + UserConnection.class + "; instead got " + connection);
     }
   }
 
-  public void associateConnection(final UserConnection handle) throws ResourceException {
+  public void associateConnection(final UserConnection<DroolsManagedConnection> handle) throws ResourceException {
     if (handle != null) {
       synchronized (this.handles) {
         this.handles.add(handle);
@@ -185,10 +187,10 @@ public class DroolsManagedConnection implements ManagedConnection, Dissociatable
   @Override
   public void dissociateConnections() {
     synchronized (this.handles) {
-      final Iterator<UserConnection> i = this.handles.iterator();
+      final Iterator<UserConnection<DroolsManagedConnection>> i = this.handles.iterator();
       assert i != null;
       while (i.hasNext()) {
-        final UserConnection handle = i.next();
+        final UserConnection<DroolsManagedConnection> handle = i.next();
         if (handle != null) {
           handle.setCreator(null);
         }
@@ -239,7 +241,7 @@ public class DroolsManagedConnection implements ManagedConnection, Dissociatable
    * @param handle the {@link UserConnection} to close.  If the value
    * of this parameter is {@code null}, then no action will be taken.
    */
-  protected void closeAndDetach(final UserConnection handle) {
+  protected void closeAndDetach(final UserConnection<DroolsManagedConnection> handle) {
     if (handle != null) {
       this.fireConnectionClosedEvent(handle);
       handle.setCreator(null);
@@ -327,7 +329,7 @@ public class DroolsManagedConnection implements ManagedConnection, Dissociatable
       from multiple connection handles. This may be required in a
       future release of the specification.
     */
-    UserConnection handle = null;
+    UserConnection<DroolsManagedConnection> handle = null;
     KnowledgeAgent knowledgeAgent = null;
     try {
       knowledgeAgent = this.getKnowledgeAgent();
